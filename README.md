@@ -100,7 +100,7 @@ Integrate your **UniFi Talk** SIP extension with the powerful **ha-sip** add-on 
 ---
 
 ## How it works
-
+```
 UniFi Talk (SIP) <---> ha-sip add-on <----> Home Assistant
 ↑ ↑
 | (webhook JSON) | (services)
@@ -108,6 +108,7 @@ UniFi Talk (SIP) <---> ha-sip add-on <----> Home Assistant
 ├─ wraps ha-sip commands as HA services
 ├─ registers a webhook id and re-emits events
 └─ tracks live state in a sensor
+```
 
 - **Outbound**: You call `hacs_unifi_talk.*` services → integration sends `hassio.addon_stdin` to **ha-sip**.
 - **Inbound**: ha-sip posts to your **webhook id** → integration (a) updates the sensor, (b) re-emits the payload as a HA event `hacs_unifi_talk_webhook` for Automations/Node-RED.
