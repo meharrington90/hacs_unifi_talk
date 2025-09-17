@@ -1,10 +1,4 @@
-# HACS UniFi Talk (ha-sip)
-
-[![HACS Custom][hacs-badge]][hacs-link]
-[![hassfest][hassfest-badge]][hassfest-link]
-[![HACS Validation][hacs-validate-badge]][hacs-validate-link]
-[![License: MIT][license-badge]][license-link]
-[![Release][release-badge]][release-link]
+# ![logo](icon.png) HACS UniFi Talk (ha-sip)
 
 Integrate your **UniFi Talk** SIP extension with the powerful **ha-sip** add-on to make and receive calls, play TTS or audio files, collect DTMF, route incoming calls by PIN, and wire the whole thing into Home Assistant Automations or **Node-RED**.
 
