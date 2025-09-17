@@ -1,0 +1,81 @@
+blueprint:
+  name: ha-sip Incoming Call Router (HACS UniFi Talk)
+  description: Route incoming ha-sip webhook events by type.
+  domain: automation
+  input:
+    webhook_id:
+      name: Webhook ID
+      description: The webhook id configured in HACS UniFi Talk (ha-sip).
+      selector:
+        text:
+    on_incoming_call:
+      name: Actions: incoming_call
+      default: []
+      selector:
+        action: {}
+    on_call_established:
+      name: Actions: call_established
+      default: []
+      selector:
+        action: {}
+    on_entered_menu:
+      name: Actions: entered_menu
+      default: []
+      selector:
+        action: {}
+    on_dtmf_digit:
+      name: Actions: dtmf_digit
+      default: []
+      selector:
+        action: {}
+    on_playback_done:
+      name: Actions: playback_done
+      default: []
+      selector:
+        action: {}
+    on_ring_timeout:
+      name: Actions: ring_timeout
+      default: []
+      selector:
+        action: {}
+    on_timeout:
+      name: Actions: timeout
+      default: []
+      selector:
+        action: {}
+    on_call_disconnected:
+      name: Actions: call_disconnected
+      default: []
+      selector:
+        action: {}
+
+mode: parallel
+max: 10
+
+trigger:
+  - platform: webhook
+    webhook_id: !input webhook_id
+
+variables:
+  ev: "{{ trigger.json.event | default('') }}"
+
+condition: []
+
+action:
+  - choose:
+      - conditions: "{{ ev == 'incoming_call' }}"
+        sequence: !input on_incoming_call
+      - conditions: "{{ ev == 'call_established' }}"
+        sequence: !input on_call_established
+      - conditions: "{{ ev == 'entered_menu' }}"
+        sequence: !input on_entered_menu
+      - conditions: "{{ ev == 'dtmf_digit' }}"
+        sequence: !input on_dtmf_digit
+      - conditions: "{{ ev == 'playback_done' }}"
+        sequence: !input on_playback_done
+      - conditions: "{{ ev == 'ring_timeout' }}"
+        sequence: !input on_ring_timeout
+      - conditions: "{{ ev == 'timeout' }}"
+        sequence: !input on_timeout
+      - conditions: "{{ ev == 'call_disconnected' }}"
+        sequence: !input on_call_disconnected

@@ -1,0 +1,103 @@
+dial:
+  name: Dial via ha-sip
+  fields:
+    number:
+      required: true
+      example: "sip:+18008675309@192.168.1.1"
+    ring_timeout:
+      required: false
+      default: 300
+    sip_account:
+      required: false
+      default: 1
+    webhook_to_call:
+      required: false
+      example:
+        call_established: "my_hook"
+    menu:
+      required: false
+      example:
+        message: "Hello from HA."
+
+hangup:
+  name: Hang up
+  fields:
+    number:
+      required: true
+      example: "sip:+18008675309@192.168.1.1"
+
+send_dtmf:
+  name: Send DTMF
+  fields:
+    number:
+      required: true
+    digits:
+      required: true
+      example: "#5"
+    method:
+      required: false
+      default: "in_band"
+
+transfer:
+  name: Transfer call
+  fields:
+    number:
+      required: true
+    transfer_to:
+      required: true
+
+bridge_audio:
+  name: Bridge audio
+  fields:
+    number:
+      required: true
+    bridge_to:
+      required: true
+
+play_message:
+  name: Play TTS message
+  fields:
+    number:
+      required: true
+    message:
+      required: true
+    tts_language:
+      required: false
+    cache_audio:
+      required: false
+      default: false
+    wait_for_audio_to_finish:
+      required: false
+      default: false
+
+play_audio_file:
+  name: Play audio file
+  fields:
+    number:
+      required: true
+    audio_file:
+      required: true
+      example: "/config/audio/welcome.mp3"
+    cache_audio:
+      required: false
+      default: false
+    wait_for_audio_to_finish:
+      required: false
+      default: false
+
+stop_playback:
+  name: Stop playback
+  fields:
+    number:
+      required: true
+
+answer:
+  name: Answer incoming call
+  fields:
+    number:
+      required: true
+      example: "internal-call-id"
+    webhook_to_call:
+      required: false
+    menu:
+      required: false

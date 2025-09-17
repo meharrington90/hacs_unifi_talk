@@ -1,0 +1,36 @@
+[
+  {
+    "id": "ha_server",
+    "type": "server",
+    "name": "Home Assistant",
+    "addon": true
+  },
+  {
+    "id": "inject_dtmf",
+    "type": "inject",
+    "z": "flow3",
+    "name": "Send #5",
+    "props": [{"p":"payload"}],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "payloadType": "json",
+    "x": 140,
+    "y": 100,
+    "wires": [["send_dtmf"]]
+  },
+  {
+    "id": "send_dtmf",
+    "type": "api-call-service",
+    "z": "flow3",
+    "name": "DTMF -> active call",
+    "server": "ha_server",
+    "version": 5,
+    "domain": "hacs_unifi_talk",
+    "service": "send_dtmf",
+    "data": "{\"number\":\"+18008675309\",\"digits\":\"#5\",\"method\":\"in_band\"}",
+    "x": 330,
+    "y": 100,
+    "wires": [[]]
+  }
+]

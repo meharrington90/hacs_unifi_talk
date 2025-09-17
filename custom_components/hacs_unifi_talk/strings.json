@@ -1,0 +1,43 @@
+{
+  "title": "HACS UniFi Talk (ha-sip)",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configure SIP via ha-sip",
+        "description": "We will configure the ha-sip add-on with your UniFi Talk details.",
+        "data": {
+          "sip_host": "SIP host (UniFi Talk IP / DNS)",
+          "sip_port": "SIP port",
+          "username": "Extension / User name",
+          "password": "SIP password (leave blank to fetch via SSH)",
+          "realm": "SIP realm (usually \"*\")",
+          "answer_mode": "Answer mode (listen/accept)",
+          "settle_time": "Settle time after call answer (s)",
+          "incoming_call_file": "Incoming call config file (e.g. /config/sip-1-incoming.yaml)",
+          "tts_engine_id": "TTS engine entity (e.g. tts.home_assistant_cloud)",
+          "tts_language": "TTS language (e.g. en or en-US)",
+          "tts_voice": "TTS voice (if supported)",
+          "tts_debug_print": "TTS debug print",
+          "webhook_id": "Webhook ID (leave empty to auto-generate)",
+          "cache_dir": "Cache dir (must exist, e.g. /config/audio_cache)",
+          "name_server": "Name servers (comma separated) for SRV",
+          "global_options": "Global options (advanced; raw string)",
+          "sip_options": "SIP options (advanced; raw string)",
+          "enable_ssh": "Fetch SIP password via SSH",
+          "ssh_host": "UniFi Console SSH host",
+          "ssh_port": "SSH port",
+          "ssh_user": "SSH user",
+          "ssh_password": "SSH password"
+        }
+      }
+    },
+    "error": {
+      "addon_missing": "The ha-sip add-on is not installed or reachable. Install/start it first.",
+      "addon_options_failed": "Writing ha-sip options failed.",
+      "ssh_password_fetch_failed": "Could not fetch SIP password over SSH."
+    },
+    "abort": {
+      "single_instance_allowed": "Only one instance is allowed."
+    }
+  }
+}

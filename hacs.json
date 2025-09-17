@@ -1,7 +1,7 @@
 {
   "name": "hacs_unifi_talk",
   "render_readme": true,
-  "homeassistant": "2025.09.0",
+  "homeassistant": "2025.9.1",
   "zip_release": true,
   "filename": "hacs_unifi_talk.zip"
 }

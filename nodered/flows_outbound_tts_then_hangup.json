@@ -1,0 +1,68 @@
+[
+  {
+    "id": "ha_server",
+    "type": "server",
+    "name": "Home Assistant",
+    "addon": true
+  },
+  {
+    "id": "inject_call",
+    "type": "inject",
+    "z": "flow2",
+    "name": "Dial now",
+    "props": [{"p":"payload"}],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "payloadType": "json",
+    "x": 160,
+    "y": 100,
+    "wires": [["call_tts"]]
+  },
+  {
+    "id": "call_tts",
+    "type": "api-call-service",
+    "z": "flow2",
+    "name": "Dial -> TTS",
+    "server": "ha_server",
+    "version": 5,
+    "domain": "hacs_unifi_talk",
+    "service": "dial",
+    "data": "{\"number\":\"+18008675309\",\"ring_timeout\":15,\"menu\":{\"message\":\"Test from Node-RED.\"}}",
+    "x": 360,
+    "y": 100,
+    "wires": [["delay_then_hangup"]]
+  },
+  {
+    "id": "delay_then_hangup",
+    "type": "delay",
+    "z": "flow2",
+    "name": "Wait 20s",
+    "pauseType": "delay",
+    "timeout": "20",
+    "timeoutUnits": "seconds",
+    "rate": "1",
+    "nbRateUnits": "1",
+    "rateUnits": "second",
+    "randomFirst": "1",
+    "randomLast": "5",
+    "x": 560,
+    "y": 100,
+    "wires": [["hangup_call"]]
+  },
+  {
+    "id": "hangup_call",
+    "type": "api-call-service",
+    "z": "flow2",
+    "name": "Hangup",
+    "server": "ha_server",
+    "version": 5,
+    "domain": "hacs_unifi_talk",
+    "service": "hangup",
+    "data": "{\"number\":\"+18008675309\"}",
+    "x": 740,
+    "y": 100,
+    "wires": [[]]
+  }
+]
