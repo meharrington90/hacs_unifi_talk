@@ -122,7 +122,7 @@ UniFi Talk (SIP) <---> ha-sip add-on <----> Home Assistant
 | **SIP host** | `192.168.1.1` | Your UniFi Talk IP/DNS |
 | **SIP port** | `5060` | Port for SIP |
 | **Username** | `0001` | Your UniFi Talk **extension** |
-| **Password** | *(blank)* | Optional if using SSH fetch |
+| **Password** | *(blank)* | Must obtain from Unifi Host |
 | **Realm** | `*` | SIP realm |
 | **Answer mode** | `listen` | `listen` or `accept` |
 | **Settle time** | `1` | Seconds after connect before playing |
@@ -145,8 +145,8 @@ UniFi Talk (SIP) <---> ha-sip add-on <----> Home Assistant
 
 ## Services
 
-The integration normalizes simple numbers like `**620` or `+1907…` to SIP URIs  
-`sip:**620@<sip_host>` / `sip:+1907…@<sip_host>`.
+The integration normalizes simple numbers like `**620` or `+1800…` to SIP URIs  
+`sip:**620@<sip_host>` / `sip:+1800…@<sip_host>`.
 
 | Service | Purpose | Key fields |
 |---|---|---|
@@ -158,19 +158,19 @@ The integration normalizes simple numbers like `**620` or `+1907…` to SIP URIs
 | `hacs_unifi_talk.play_message` | TTS to call | `number`, `message`, `tts_language?`, `cache_audio?`, `wait_for_audio_to_finish?` |
 | `hacs_unifi_talk.play_audio_file` | Play a file | `number`, `audio_file`, `cache_audio?`, `wait_for_audio_to_finish?` |
 | `hacs_unifi_talk.stop_playback` | Stop TTS/audio playback | `number` |
-| `hacs_unifi_talk.answer` | Answer by **internal id** | `number` (internal id), `menu?`, `webhook_to_call?` |
+| `hacs_unifi_talk.answer` | Answer by **internal id** | `number [internal id]`, `menu?`, `webhook_to_call?` |
 
 ## Examples:
 
-> The integration normalizes plain numbers like `**620` or `+1907…` into SIP URIs
-> `sip:**620@<sip_host>` / `sip:+1907…@<sip_host>`.
+> The integration normalizes plain numbers like `**620` or `+1800…` into SIP URIs
+> `sip:**620@<sip_host>` / `sip:+1800…@<sip_host>`.
 
 - **Dial with TTS message**
 ```
 {
   service: hacs_unifi_talk.dial
   data:
-    number: "+19073703015"
+    number: "+18008675309"
     ring_timeout: 15
     menu:
       message: "There is a silent alarm. Mode: {{ states('alarm_control_panel.home_alarm') }}."
@@ -182,7 +182,7 @@ The integration normalizes simple numbers like `**620` or `+1907…` to SIP URIs
 {
   service: hacs_unifi_talk.hangup
   data:
-    number: "+19073703015"
+    number: "+18008675309"
 }
 ```
 
@@ -202,7 +202,7 @@ The integration normalizes simple numbers like `**620` or `+1907…` to SIP URIs
 {
   service: hacs_unifi_talk.play_audio_file
   data:
-    number: "**620"
+    number: "+18008675309"
     audio_file: "/config/audio/welcome.mp3"
     wait_for_audio_to_finish: true
 }
