@@ -1,0 +1,43 @@
+{
+  "title": "DSS VoIP",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configure DSS VoIP",
+        "data": {
+          "addon_slug": "Add-on slug",
+          "host": "SIP host",
+          "port": "SIP port"
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Only a single instance is allowed."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "DSS VoIP options",
+        "data": {
+          "addon_slug": "Add-on slug",
+          "host": "SIP host",
+          "port": "SIP port"
+        }
+      }
+    }
+  },
+  "services": {
+    "call": {
+      "name": "Place DSS VoIP call",
+      "description": "Send TTS to the DSS VoIP add-on via hassio.addon_stdin and call the SIP URI.",
+      "fields": {
+        "phone_number": { "name": "Phone number (+E.164)" },
+        "message_tts": { "name": "TTS message" },
+        "host": { "name": "SIP host" },
+        "port": { "name": "SIP port" },
+        "addon_slug": { "name": "Add-on slug" }
+      }
+    }
+  }
+}
