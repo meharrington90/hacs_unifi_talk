@@ -6,9 +6,8 @@ from dataclasses import asdict, dataclass, field, fields
 from datetime import UTC, datetime
 from typing import Any
 
-from aiohttp import web
 import voluptuous as vol
-
+from aiohttp import web
 from homeassistant.components import webhook as webhook_comp
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall
