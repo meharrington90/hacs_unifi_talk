@@ -1,13 +1,8 @@
 blueprint:
-  name: ha-sip Incoming Call Router (HACS UniFi Talk)
-  description: Route incoming ha-sip webhook events by type.
+  name: UniFi Talk Event Router
+  description: Route `hacs_unifi_talk_webhook` events by type.
   domain: automation
   input:
-    webhook_id:
-      name: Webhook ID
-      description: The webhook id configured in HACS UniFi Talk (ha-sip).
-      selector:
-        text:
     on_incoming_call:
       name: Actions: incoming_call
       default: []
@@ -53,11 +48,12 @@ mode: parallel
 max: 10
 
 trigger:
-  - platform: webhook
-    webhook_id: !input webhook_id
+  - platform: event
+    event_type: hacs_unifi_talk_webhook
 
 variables:
-  ev: "{{ trigger.json.event | default('') }}"
+  payload: "{{ trigger.event.data }}"
+  ev: "{{ payload.event | default('') }}"
 
 condition: []
 

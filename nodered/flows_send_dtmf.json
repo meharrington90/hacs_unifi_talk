@@ -28,7 +28,7 @@
     "version": 5,
     "domain": "hacs_unifi_talk",
     "service": "send_dtmf",
-    "data": "{\"number\":\"+18008675309\",\"digits\":\"#5\",\"method\":\"in_band\"}",
+    "data": "{\"number\":\"8008675309\",\"digits\":\"#5\",\"method\":\"in_band\"}",
     "x": 330,
     "y": 100,
     "wires": [[]]

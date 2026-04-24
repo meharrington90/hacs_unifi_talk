@@ -2,6 +2,19 @@
 
 All notable changes to **HACS UniFi Talk (ha-sip)** will be documented here.
 
+## [Unreleased]
+### Added
+- `translations/en.json` so the config and options flows use proper Home Assistant translation files.
+- Basic GitHub Actions workflows for HACS validation and static checks.
+- `pyproject.toml` with Ruff configuration.
+
+### Changed
+- Refactored integration setup so services are registered once, config/options are merged consistently, and runtime state is tracked per config entry.
+- Fixed webhook handling to update the sensor and republish payloads as the `hacs_unifi_talk_webhook` event.
+- Reworked the blueprint to listen for Home Assistant events instead of trying to reuse the integration's webhook ID.
+- Improved Supervisor API handling and add-on option generation.
+- Updated documentation and service descriptions to reflect the actual supported flow.
+
 ## [2025.9.0] - 2025-09-17
 ### Added
 - Initial public release.
@@ -26,5 +39,5 @@ All notable changes to **HACS UniFi Talk (ha-sip)** will be documented here.
   `github.com/meharrington90/hacs_unifi_talk`.
 
 ### Notes
-- Requires Home Assistant OS / Supervised (Supervisor API).
-- Requires the **ha-sip** add-on (`c7744bff_ha-sip`) from https://github.com/arnonym/ha-plugins.
+- REQUIRED: Home Assistant OS / Supervised (Supervisor API).
+- REQUIRED: The **ha-sip** add-on (`c7744bff_ha-sip`) from https://github.com/arnonym/ha-plugins.

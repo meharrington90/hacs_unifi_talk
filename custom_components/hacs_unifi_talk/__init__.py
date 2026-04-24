@@ -1,246 +1,428 @@
 from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+import logging
 import re
+from typing import Any
+
+from aiohttp import web
 import voluptuous as vol
-import datetime as dt
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST
-from homeassistant.helpers.typing import ConfigType
+
 from homeassistant.components import webhook as webhook_comp
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.typing import ConfigType
 
 from .const import (
-    DOMAIN, CONF_SIP_HOST, CONF_SIP_PORT, CONF_WEBHOOK_ID
+    ADDON_SLUG,
+    CONF_SIP_HOST,
+    CONF_WEBHOOK_ID,
+    DATA_ENTRIES,
+    DATA_SERVICES_REGISTERED,
+    DOMAIN,
+    EVENT_WEBHOOK,
+    PLATFORMS,
+    SIGNAL_CALL_STATE,
 )
-# We will call hassio.addon_stdin directly
-ADDON_SLUG = "c7744bff_ha-sip"
-SIGNAL_CALL_STATE = "hacs_unifi_talk_call_state"
+from .supervisor import SupervisorError, set_system_managed
+
+_LOGGER = logging.getLogger(__name__)
+
+SERVICE_DIAL = "dial"
+SERVICE_HANGUP = "hangup"
+SERVICE_SEND_DTMF = "send_dtmf"
+SERVICE_TRANSFER = "transfer"
+SERVICE_BRIDGE_AUDIO = "bridge_audio"
+SERVICE_PLAY_MESSAGE = "play_message"
+SERVICE_PLAY_AUDIO_FILE = "play_audio_file"
+SERVICE_STOP_PLAYBACK = "stop_playback"
+SERVICE_ANSWER = "answer"
+
+NON_EMPTY_STRING = vol.All(cv.string, vol.Length(min=1))
+
+DIAL_SCHEMA = vol.Schema(
+    {
+        vol.Required("number"): NON_EMPTY_STRING,
+        vol.Optional("ring_timeout", default=300): vol.All(
+            vol.Coerce(int), vol.Range(min=1)
+        ),
+        vol.Optional("sip_account", default=1): vol.All(
+            vol.Coerce(int), vol.Range(min=1)
+        ),
+        vol.Optional("menu"): dict,
+        vol.Optional("webhook_to_call"): dict,
+    },
+    extra=vol.PREVENT_EXTRA,
+)
+
+HANGUP_SCHEMA = vol.Schema(
+    {vol.Required("number"): NON_EMPTY_STRING},
+    extra=vol.PREVENT_EXTRA,
+)
+
+DTMF_SCHEMA = vol.Schema(
+    {
+        vol.Required("number"): NON_EMPTY_STRING,
+        vol.Required("digits"): NON_EMPTY_STRING,
+        vol.Optional("method", default="in_band"): vol.In(
+            ("in_band", "rfc2833", "sip_info")
+        ),
+    },
+    extra=vol.PREVENT_EXTRA,
+)
+
+TRANSFER_SCHEMA = vol.Schema(
+    {
+        vol.Required("number"): NON_EMPTY_STRING,
+        vol.Required("transfer_to"): NON_EMPTY_STRING,
+    },
+    extra=vol.PREVENT_EXTRA,
+)
+
+BRIDGE_SCHEMA = vol.Schema(
+    {
+        vol.Required("number"): NON_EMPTY_STRING,
+        vol.Required("bridge_to"): NON_EMPTY_STRING,
+    },
+    extra=vol.PREVENT_EXTRA,
+)
+
+PLAY_MESSAGE_SCHEMA = vol.Schema(
+    {
+        vol.Required("number"): NON_EMPTY_STRING,
+        vol.Required("message"): NON_EMPTY_STRING,
+        vol.Optional("tts_language"): cv.string,
+        vol.Optional("cache_audio", default=False): bool,
+        vol.Optional("wait_for_audio_to_finish", default=False): bool,
+    },
+    extra=vol.PREVENT_EXTRA,
+)
+
+PLAY_AUDIO_FILE_SCHEMA = vol.Schema(
+    {
+        vol.Required("number"): NON_EMPTY_STRING,
+        vol.Required("audio_file"): NON_EMPTY_STRING,
+        vol.Optional("cache_audio", default=False): bool,
+        vol.Optional("wait_for_audio_to_finish", default=False): bool,
+    },
+    extra=vol.PREVENT_EXTRA,
+)
+
+STOP_PLAYBACK_SCHEMA = vol.Schema(
+    {vol.Required("number"): NON_EMPTY_STRING},
+    extra=vol.PREVENT_EXTRA,
+)
+
+ANSWER_SCHEMA = vol.Schema(
+    {
+        vol.Required("number"): NON_EMPTY_STRING,
+        vol.Optional("menu"): dict,
+        vol.Optional("webhook_to_call"): dict,
+    },
+    extra=vol.PREVENT_EXTRA,
+)
 
 
-def _mk_sip_uri(number: str, host: str) -> str:
-    n = (number or "").strip()
-    if n.startswith("sip:"):
-        return n
-    # if it's digits / **feature codes, turn into sip:<n>@host
-    if re.fullmatch(r"[\d*#]+", n):
-        return f"sip:{n}@{host}"
-    # else pass through
-    return n
+@dataclass
+class UniFiTalkRuntimeData:
+    config: dict[str, Any]
+    state: dict[str, Any] = field(default_factory=dict)
 
-DIAL_SCHEMA = vol.Schema({
-    vol.Required("number"): str,
-    vol.Optional("ring_timeout", default=300): int,
-    vol.Optional("sip_account", default=1): int,
-    vol.Optional("menu", default={}): dict,
-    vol.Optional("webhook_to_call", default={}): dict,
-})
 
-HANGUP_SCHEMA = vol.Schema({vol.Required("number"): str})
+def _default_state() -> dict[str, Any]:
+    return {
+        "event": "idle",
+        "caller": None,
+        "parsed_caller": None,
+        "sip_account": None,
+        "internal_id": None,
+        "last_dtmf_digit": None,
+        "last_type": None,
+        "last_message": None,
+        "last_audio_file": None,
+        "updated": None,
+    }
 
-DTMF_SCHEMA = vol.Schema({
-    vol.Required("number"): str,
-    vol.Required("digits"): str,
-    vol.Optional("method", default="in_band"): vol.In(["in_band","rfc2833","sip_info"]),
-})
 
-TRANSFER_SCHEMA = vol.Schema({
-    vol.Required("number"): str,
-    vol.Required("transfer_to"): str,
-})
+def _normalize_sip_target(number: str, host: str) -> str:
+    target = number.strip()
+    if target.startswith(("sip:", "sips:", "tel:")):
+        return target
+    if "@" in target:
+        return f"sip:{target}"
+    if re.fullmatch(r"[A-Za-z0-9+*#._-]+", target):
+        return f"sip:{target}@{host}"
+    return target
 
-BRIDGE_SCHEMA = vol.Schema({
-    vol.Required("number"): str,
-    vol.Required("bridge_to"): str,
-})
 
-PLAY_MESSAGE_SCHEMA = vol.Schema({
-    vol.Required("number"): str,
-    vol.Required("message"): str,
-    vol.Optional("tts_language"): str,
-    vol.Optional("cache_audio", default=False): bool,
-    vol.Optional("wait_for_audio_to_finish", default=False): bool,
-})
+def _get_runtime(hass: HomeAssistant) -> UniFiTalkRuntimeData:
+    entries: dict[str, UniFiTalkRuntimeData] = hass.data[DOMAIN][DATA_ENTRIES]
+    if not entries:
+        raise HomeAssistantError(
+            "UniFi Talk is not configured. Add the integration first."
+        )
+    return next(iter(entries.values()))
 
-PLAY_AUDIO_FILE_SCHEMA = vol.Schema({
-    vol.Required("number"): str,
-    vol.Required("audio_file"): str,
-    vol.Optional("cache_audio", default=False): bool,
-    vol.Optional("wait_for_audio_to_finish", default=False): bool,
-})
 
-STOP_PLAYBACK_SCHEMA = vol.Schema({vol.Required("number"): str})
+async def _stdin(hass: HomeAssistant, payload: dict[str, Any]) -> None:
+    if not hass.services.has_service("hassio", "addon_stdin"):
+        raise HomeAssistantError(
+            "The Home Assistant Supervisor add-on API is not available."
+        )
 
-ANSWER_SCHEMA = vol.Schema({
-    vol.Required("number"): str,
-    vol.Optional("menu", default={}): dict,
-    vol.Optional("webhook_to_call", default={}): dict,
-})
-
-async def _stdin(hass: HomeAssistant, payload: dict) -> None:
     await hass.services.async_call(
-        "hassio", "addon_stdin",
+        "hassio",
+        "addon_stdin",
         {"addon": ADDON_SLUG, "input": payload},
         blocking=True,
     )
 
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    return True
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = entry.data
-    host = entry.data.get(CONF_SIP_HOST, "192.168.1.1")
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-        "config": entry.data,
-        "state": {
-            "event": "idle",
-            "caller": None,
-            "parsed_caller": None,
-            "sip_account": None,
-            "internal_id": None,
-            "last_dtmf_digit": None,
-            "last_type": None,
-            "last_message": None,
-            "last_audio_file": None,
-            "updated": None,
-        }
-    }
-
-    webhook_id = entry.data.get(CONF_WEBHOOK_ID)
-    if webhook_id:
-        async def _handle_webhook(hass: HomeAssistant, webhook_id: str, request):
-            payload = await request.json()
-            now = dt.datetime.now(dt.timezone.utc).isoformat()
-
-            s = hass.data[DOMAIN][entry.entry_id]["state"]
-            s["event"] = payload.get("event")
-            s["caller"] = payload.get("caller")
-            s["parsed_caller"] = payload.get("parsed_caller")
-            s["sip_account"] = payload.get("sip_account")
-            s["internal_id"] = payload.get("internal_id")
-            if payload.get("event") == "dtmf_digit":
-                s["last_dtmf_digit"] = payload.get("digit")
-            if payload.get("event") == "playback_done":
-                s["last_type"] = payload.get("type")
-                s["last_message"] = payload.get("message")
-                s["last_audio_file"] = payload.get("audio_file")
-            s["updated"] = now
-
-            # Update entities
-            async_dispatcher_send(hass, f"{SIGNAL_CALL_STATE}_{entry.entry_id}")
-
-            # Re-emit as HA event for Node-RED
-            hass.bus.async_fire("hacs_unifi_talk_webhook", payload)
-
-            return None
-
-        # safe re-register
-        try:
-            webhook_comp.async_unregister(hass, webhook_id)
-        except Exception:
-            pass
-        webhook_comp.async_register(hass, DOMAIN, "ha-sip", webhook_id, _handle_webhook)
+def _register_services(hass: HomeAssistant) -> None:
+    if hass.data[DOMAIN][DATA_SERVICES_REGISTERED]:
+        return
 
     async def dial(call: ServiceCall) -> None:
-        data = DIAL_SCHEMA(call.data)
-        number = _mk_sip_uri(data["number"], host)
-        payload = {
-            "command": "dial",
-            "number": number,
-            "ring_timeout": data["ring_timeout"],
-            "sip_account": data["sip_account"],
-            "webhook_to_call": data["webhook_to_call"],
-            "menu": data["menu"],
-        }
-        await _stdin(hass, payload)
+        runtime = _get_runtime(hass)
+        host = runtime.config[CONF_SIP_HOST]
+        await _stdin(
+            hass,
+            {
+                "command": SERVICE_DIAL,
+                "number": _normalize_sip_target(call.data["number"], host),
+                "ring_timeout": call.data["ring_timeout"],
+                "sip_account": call.data["sip_account"],
+                "menu": call.data.get("menu", {}),
+                "webhook_to_call": call.data.get("webhook_to_call", {}),
+            },
+        )
 
     async def hangup(call: ServiceCall) -> None:
-        data = HANGUP_SCHEMA(call.data)
-        await _stdin(hass, {"command": "hangup", "number": _mk_sip_uri(data["number"], host)})
+        runtime = _get_runtime(hass)
+        host = runtime.config[CONF_SIP_HOST]
+        await _stdin(
+            hass,
+            {
+                "command": SERVICE_HANGUP,
+                "number": _normalize_sip_target(call.data["number"], host),
+            },
+        )
 
     async def send_dtmf(call: ServiceCall) -> None:
-        data = DTMF_SCHEMA(call.data)
-        await _stdin(hass, {
-            "command": "send_dtmf",
-            "number": _mk_sip_uri(data["number"], host),
-            "digits": data["digits"],
-            "method": data["method"],
-        })
+        runtime = _get_runtime(hass)
+        host = runtime.config[CONF_SIP_HOST]
+        await _stdin(
+            hass,
+            {
+                "command": SERVICE_SEND_DTMF,
+                "number": _normalize_sip_target(call.data["number"], host),
+                "digits": call.data["digits"],
+                "method": call.data["method"],
+            },
+        )
 
     async def transfer(call: ServiceCall) -> None:
-        data = TRANSFER_SCHEMA(call.data)
-        await _stdin(hass, {
-            "command": "transfer",
-            "number": _mk_sip_uri(data["number"], host),
-            "transfer_to": _mk_sip_uri(data["transfer_to"], host),
-        })
+        runtime = _get_runtime(hass)
+        host = runtime.config[CONF_SIP_HOST]
+        await _stdin(
+            hass,
+            {
+                "command": SERVICE_TRANSFER,
+                "number": _normalize_sip_target(call.data["number"], host),
+                "transfer_to": _normalize_sip_target(call.data["transfer_to"], host),
+            },
+        )
 
-    async def bridge(call: ServiceCall) -> None:
-        data = BRIDGE_SCHEMA(call.data)
-        await _stdin(hass, {
-            "command": "bridge_audio",
-            "number": _mk_sip_uri(data["number"], host),
-            "bridge_to": _mk_sip_uri(data["bridge_to"], host),
-        })
+    async def bridge_audio(call: ServiceCall) -> None:
+        runtime = _get_runtime(hass)
+        host = runtime.config[CONF_SIP_HOST]
+        await _stdin(
+            hass,
+            {
+                "command": SERVICE_BRIDGE_AUDIO,
+                "number": _normalize_sip_target(call.data["number"], host),
+                "bridge_to": _normalize_sip_target(call.data["bridge_to"], host),
+            },
+        )
 
     async def play_message(call: ServiceCall) -> None:
-        data = PLAY_MESSAGE_SCHEMA(call.data)
-        p = {
-            "command": "play_message",
-            "number": _mk_sip_uri(data["number"], host),
-            "message": data["message"],
-            "cache_audio": data["cache_audio"],
-            "wait_for_audio_to_finish": data["wait_for_audio_to_finish"],
+        runtime = _get_runtime(hass)
+        host = runtime.config[CONF_SIP_HOST]
+        payload = {
+            "command": SERVICE_PLAY_MESSAGE,
+            "number": _normalize_sip_target(call.data["number"], host),
+            "message": call.data["message"],
+            "cache_audio": call.data["cache_audio"],
+            "wait_for_audio_to_finish": call.data["wait_for_audio_to_finish"],
         }
-        if data.get("tts_language"):
-            p["tts_language"] = data["tts_language"]
-        await _stdin(hass, p)
+        if call.data.get("tts_language"):
+            payload["tts_language"] = call.data["tts_language"]
+        await _stdin(hass, payload)
 
     async def play_audio_file(call: ServiceCall) -> None:
-        data = PLAY_AUDIO_FILE_SCHEMA(call.data)
-        await _stdin(hass, {
-            "command": "play_audio_file",
-            "number": _mk_sip_uri(data["number"], host),
-            "audio_file": data["audio_file"],
-            "cache_audio": data["cache_audio"],
-            "wait_for_audio_to_finish": data["wait_for_audio_to_finish"],
-        })
+        runtime = _get_runtime(hass)
+        host = runtime.config[CONF_SIP_HOST]
+        await _stdin(
+            hass,
+            {
+                "command": SERVICE_PLAY_AUDIO_FILE,
+                "number": _normalize_sip_target(call.data["number"], host),
+                "audio_file": call.data["audio_file"],
+                "cache_audio": call.data["cache_audio"],
+                "wait_for_audio_to_finish": call.data["wait_for_audio_to_finish"],
+            },
+        )
 
     async def stop_playback(call: ServiceCall) -> None:
-        data = STOP_PLAYBACK_SCHEMA(call.data)
-        await _stdin(hass, {"command": "stop_playback", "number": _mk_sip_uri(data["number"], host)})
+        runtime = _get_runtime(hass)
+        host = runtime.config[CONF_SIP_HOST]
+        await _stdin(
+            hass,
+            {
+                "command": SERVICE_STOP_PLAYBACK,
+                "number": _normalize_sip_target(call.data["number"], host),
+            },
+        )
 
     async def answer(call: ServiceCall) -> None:
-        data = ANSWER_SCHEMA(call.data)
-        await _stdin(hass, {
-            "command": "answer",
-            "number": data["number"],  # internal id; don't rewrite
-            "webhook_to_call": data["webhook_to_call"],
-            "menu": data["menu"],
-        })
+        await _stdin(
+            hass,
+            {
+                "command": SERVICE_ANSWER,
+                "number": call.data["number"],
+                "menu": call.data.get("menu", {}),
+                "webhook_to_call": call.data.get("webhook_to_call", {}),
+            },
+        )
 
-    hass.services.async_register(DOMAIN, "dial", dial)
-    hass.services.async_register(DOMAIN, "hangup", hangup)
-    hass.services.async_register(DOMAIN, "send_dtmf", send_dtmf)
-    hass.services.async_register(DOMAIN, "transfer", transfer)
-    hass.services.async_register(DOMAIN, "bridge_audio", bridge)
-    hass.services.async_register(DOMAIN, "play_message", play_message)
-    hass.services.async_register(DOMAIN, "play_audio_file", play_audio_file)
-    hass.services.async_register(DOMAIN, "stop_playback", stop_playback)
-    hass.services.async_register(DOMAIN, "answer", answer)
+    hass.services.async_register(DOMAIN, SERVICE_DIAL, dial, schema=DIAL_SCHEMA)
+    hass.services.async_register(DOMAIN, SERVICE_HANGUP, hangup, schema=HANGUP_SCHEMA)
+    hass.services.async_register(
+        DOMAIN, SERVICE_SEND_DTMF, send_dtmf, schema=DTMF_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_TRANSFER, transfer, schema=TRANSFER_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_BRIDGE_AUDIO, bridge_audio, schema=BRIDGE_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_PLAY_MESSAGE, play_message, schema=PLAY_MESSAGE_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_PLAY_AUDIO_FILE,
+        play_audio_file,
+        schema=PLAY_AUDIO_FILE_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_STOP_PLAYBACK, stop_playback, schema=STOP_PLAYBACK_SCHEMA
+    )
+    hass.services.async_register(DOMAIN, SERVICE_ANSWER, answer, schema=ANSWER_SCHEMA)
+    hass.data[DOMAIN][DATA_SERVICES_REGISTERED] = True
 
-    # Forward to sensor platform
-    await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
+
+def _merge_entry_config(entry: ConfigEntry) -> dict[str, Any]:
+    return {**entry.data, **entry.options}
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    hass.data.setdefault(
+        DOMAIN,
+        {
+            DATA_ENTRIES: {},
+            DATA_SERVICES_REGISTERED: False,
+        },
+    )
+    _register_services(hass)
     return True
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    # services are not namespaced per entry, so we leave them; in a future version use helpers.service.async_register_admin_service with unique names
-    hass.data[DOMAIN].pop(entry.entry_id, None)
-    webhook_id = entry.data.get(CONF_WEBHOOK_ID)
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    hass.data.setdefault(
+        DOMAIN,
+        {
+            DATA_ENTRIES: {},
+            DATA_SERVICES_REGISTERED: False,
+        },
+    )
+    _register_services(hass)
+
+    config = _merge_entry_config(entry)
+    runtime = UniFiTalkRuntimeData(config=config, state=_default_state())
+    hass.data[DOMAIN][DATA_ENTRIES][entry.entry_id] = runtime
+
+    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
+
+    webhook_id = config.get(CONF_WEBHOOK_ID)
     if webhook_id:
+
+        async def _handle_webhook(
+            hass: HomeAssistant, webhook_id: str, request: web.Request
+        ) -> web.Response:
+            del webhook_id
+            try:
+                payload = await request.json()
+            except ValueError:
+                return web.Response(status=400, text="Expected JSON payload")
+
+            state = runtime.state
+            state["event"] = payload.get("event") or "idle"
+            state["caller"] = payload.get("caller")
+            state["parsed_caller"] = payload.get("parsed_caller")
+            state["sip_account"] = payload.get("sip_account")
+            state["internal_id"] = payload.get("internal_id")
+            if payload.get("event") == "dtmf_digit":
+                state["last_dtmf_digit"] = payload.get("digit")
+            if payload.get("event") == "playback_done":
+                state["last_type"] = payload.get("type")
+                state["last_message"] = payload.get("message")
+                state["last_audio_file"] = payload.get("audio_file")
+            state["updated"] = datetime.now(timezone.utc).isoformat()
+
+            async_dispatcher_send(hass, f"{SIGNAL_CALL_STATE}_{entry.entry_id}")
+            hass.bus.async_fire(EVENT_WEBHOOK, payload)
+
+            return web.Response(status=200)
+
         try:
             webhook_comp.async_unregister(hass, webhook_id)
-        except Exception:
+        except ValueError:
             pass
-    await hass.config_entries.async_unload_platforms(entry, ["sensor"])
-    hass.data[DOMAIN].pop(entry.entry_id, None)
+
+        webhook_comp.async_register(
+            hass, DOMAIN, "UniFi Talk", webhook_id, _handle_webhook
+        )
+
+    try:
+        await set_system_managed(hass, entry.entry_id)
+    except SupervisorError as err:
+        _LOGGER.debug("Unable to mark ha-sip add-on as system managed: %s", err)
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if not unload_ok:
+        return False
+
+    runtime = hass.data[DOMAIN][DATA_ENTRIES].pop(entry.entry_id, None)
+    if runtime:
+        webhook_id = runtime.config.get(CONF_WEBHOOK_ID)
+        if webhook_id:
+            try:
+                webhook_comp.async_unregister(hass, webhook_id)
+            except ValueError:
+                pass
+
+    return True
+
+
+async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    await hass.config_entries.async_reload(entry.entry_id)

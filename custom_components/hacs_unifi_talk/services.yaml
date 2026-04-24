@@ -1,103 +1,221 @@
 dial:
   name: Dial via ha-sip
+  description: Place an outbound call through the ha-sip add-on.
   fields:
     number:
+      name: Number
+      description: Extension, phone number, or full SIP URI to call.
       required: true
-      example: "sip:+18008675309@192.168.1.1"
+      example: "8008675309"
+      selector:
+        text:
     ring_timeout:
+      name: Ring timeout
+      description: Number of seconds to let the remote side ring before ha-sip times out.
       required: false
       default: 300
+      selector:
+        number:
+          min: 1
+          mode: box
     sip_account:
+      name: SIP account
+      description: Account index to use inside ha-sip.
       required: false
       default: 1
+      selector:
+        number:
+          min: 1
+          mode: box
     webhook_to_call:
+      name: Webhook map
+      description: Optional ha-sip webhook callback mapping for this specific call.
       required: false
       example:
-        call_established: "my_hook"
+        call_established: my_hook
     menu:
+      name: Menu
+      description: Optional ha-sip menu payload to play TTS or collect input after answer.
       required: false
       example:
-        message: "Hello from HA."
+        message: Hello from Home Assistant.
 
 hangup:
   name: Hang up
+  description: Hang up an active call.
   fields:
     number:
+      name: Number
+      description: Extension, phone number, or full SIP URI identifying the call.
       required: true
-      example: "sip:+18008675309@192.168.1.1"
+      example: "8008675309"
+      selector:
+        text:
 
 send_dtmf:
   name: Send DTMF
+  description: Send DTMF digits to an active call.
   fields:
     number:
+      name: Number
+      description: Extension, phone number, or full SIP URI identifying the call.
       required: true
+      selector:
+        text:
     digits:
+      name: Digits
+      description: Digits or symbols to transmit.
       required: true
       example: "#5"
+      selector:
+        text:
     method:
+      name: Method
+      description: DTMF transport method supported by ha-sip.
       required: false
-      default: "in_band"
+      default: in_band
+      selector:
+        select:
+          options:
+            - in_band
+            - rfc2833
+            - sip_info
 
 transfer:
   name: Transfer call
+  description: Transfer a live call to another destination.
   fields:
     number:
+      name: Number
+      description: Active call identifier.
       required: true
+      selector:
+        text:
     transfer_to:
+      name: Transfer target
+      description: Destination extension, phone number, or SIP URI.
       required: true
+      selector:
+        text:
 
 bridge_audio:
   name: Bridge audio
+  description: Bridge audio between two live calls.
   fields:
     number:
+      name: First call
+      description: First active call identifier.
       required: true
+      selector:
+        text:
     bridge_to:
+      name: Second call
+      description: Second active call identifier.
       required: true
+      selector:
+        text:
 
 play_message:
   name: Play TTS message
+  description: Speak a text-to-speech message into an active call.
   fields:
     number:
+      name: Number
+      description: Active call identifier.
       required: true
+      selector:
+        text:
     message:
+      name: Message
+      description: Text that ha-sip should synthesize and play.
       required: true
+      selector:
+        text:
     tts_language:
+      name: TTS language
+      description: Optional language override for this message.
       required: false
+      example: en-US
+      selector:
+        text:
     cache_audio:
+      name: Cache audio
+      description: Cache the rendered TTS audio on disk for reuse.
       required: false
       default: false
+      selector:
+        boolean:
     wait_for_audio_to_finish:
+      name: Wait for completion
+      description: Wait for playback to finish before returning.
       required: false
       default: false
+      selector:
+        boolean:
 
 play_audio_file:
   name: Play audio file
+  description: Play an audio file into an active call.
   fields:
     number:
+      name: Number
+      description: Active call identifier.
       required: true
+      selector:
+        text:
     audio_file:
+      name: Audio file
+      description: File path accessible to ha-sip.
       required: true
-      example: "/config/audio/welcome.mp3"
+      example: "/config/hacs-unifi-talk/audio_cache/welcome.mp3"
+      selector:
+        text:
     cache_audio:
+      name: Cache audio
+      description: Cache the audio file reference on disk for reuse.
       required: false
       default: false
+      selector:
+        boolean:
     wait_for_audio_to_finish:
+      name: Wait for completion
+      description: Wait for playback to finish before returning.
       required: false
       default: false
+      selector:
+        boolean:
 
 stop_playback:
   name: Stop playback
+  description: Stop any active TTS or audio playback on a call.
   fields:
     number:
+      name: Number
+      description: Active call identifier.
       required: true
+      selector:
+        text:
 
 answer:
   name: Answer incoming call
+  description: Answer an inbound call using the internal call ID from an incoming webhook event.
   fields:
     number:
+      name: Internal call ID
+      description: Internal call identifier from the incoming event payload.
       required: true
       example: "internal-call-id"
+      selector:
+        text:
     webhook_to_call:
+      name: Webhook map
+      description: Optional ha-sip webhook callback mapping for this call.
       required: false
+      example:
+        playback_done: my_hook
     menu:
+      name: Menu
+      description: Optional ha-sip menu payload to run after answer.
       required: false
+      example:
+        message: Please enter your access code.

@@ -29,7 +29,7 @@
     "version": 5,
     "domain": "hacs_unifi_talk",
     "service": "dial",
-    "data": "{\"number\":\"+18008675309\",\"ring_timeout\":15,\"menu\":{\"message\":\"Test from Node-RED.\"}}",
+    "data": "{\"number\":\"8008675309\",\"ring_timeout\":15,\"menu\":{\"message\":\"Test from Node-RED.\"}}",
     "x": 360,
     "y": 100,
     "wires": [["delay_then_hangup"]]
@@ -60,7 +60,7 @@
     "version": 5,
     "domain": "hacs_unifi_talk",
     "service": "hangup",
-    "data": "{\"number\":\"+18008675309\"}",
+    "data": "{\"number\":\"8008675309\"}",
     "x": 740,
     "y": 100,
     "wires": [[]]
