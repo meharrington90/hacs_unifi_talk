@@ -10,6 +10,7 @@
 - A UniFi Talk third-party SIP extension
 
 This integration depends on the Supervisor API. It will not work on Home Assistant Container or Core-only installs.
+It does not bundle `ha-sip` and does not install it for you.
 
 ## Install
 
@@ -23,6 +24,7 @@ Only one config entry is supported.
 ## How It Works
 
 - The config flow validates your inputs, writes `ha-sip` options through the Supervisor API, and restarts the add-on.
+- The integration expects `ha-sip` to already be installed. If it is missing, setup stops with an `addon_missing` error.
 - The integration registers a Home Assistant webhook for `ha-sip`.
 - Incoming `ha-sip` webhook payloads are republished on the Home Assistant event bus as `hacs_unifi_talk_webhook`.
 - Runtime call/session state is tracked by `internal_id` and stored across Home Assistant restarts.
@@ -150,3 +152,7 @@ This integration is still `ha-sip`-backed. It does not currently implement direc
 - BLF or presence
 - UniFi-native call logs
 - recordings
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).

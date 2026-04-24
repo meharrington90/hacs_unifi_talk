@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2025 Michael E. Harrington
+# SPDX-License-Identifier: MIT
+
 from __future__ import annotations
 
 import os
