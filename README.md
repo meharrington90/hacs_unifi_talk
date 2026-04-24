@@ -1,53 +1,75 @@
 # HACS UniFi Talk
 
-`hacs_unifi_talk` is a Home Assistant custom integration that bridges a UniFi Talk third-party SIP extension into Home Assistant by configuring and driving the `ha-sip` add-on.
+`hacs_unifi_talk` turns a UniFi Talk third-party SIP extension into a more native Home Assistant automation surface by configuring and driving the `ha-sip` add-on.
 
-It gives you:
+## What it does
 
-- A config flow that writes `ha-sip` options for you
-- Home Assistant services for dialing, DTMF, transfer, playback, and answer
-- A sensor that exposes the latest call state
-- A Home Assistant event stream for automations and Node-RED
-- An event-router blueprint to branch call flows by event type
+- Configures the `ha-sip` add-on from a Home Assistant config flow
+- Exposes call-control actions for dial, answer, DTMF, transfer, bridging, playback, and hangup
+- Adds higher-level actions for `announce` and `answer_and_speak`
+- Tracks active and recent call sessions instead of only one last event
+- Publishes `hacs_unifi_talk_webhook` on the Home Assistant event bus
+- Exposes sensors for last event, active calls, last caller, and last DTMF digit
+- Exposes an event entity for call events
+- Exposes a notify entity for a configured default target
+- Supports reconfigure and diagnostics
 
-## Status
-
-This repository is now at a reasonable starter baseline for a real Home Assistant integration, but it is still an early project. The integration currently assumes:
+## Requirements
 
 - Home Assistant OS or Supervised
-- The Supervisor API is available
-- The `ha-sip` add-on is installed from [arnonym/ha-plugins](https://github.com/arnonym/ha-plugins)
-- You have a UniFi Talk third-party SIP extension with credentials
+- The `ha-sip` add-on from [arnonym/ha-plugins](https://github.com/arnonym/ha-plugins)
+- A UniFi Talk third-party SIP extension
 
-## Architecture
+## Automation Surface
 
-```text
-UniFi Talk <-> ha-sip add-on <-> Home Assistant
-                              |
-                              +-> hacs_unifi_talk services
-                              +-> hacs_unifi_talk_webhook event
-                              +-> sensor.last_call state
-```
+The integration owns the inbound `ha-sip` webhook and republishes those payloads as the Home Assistant event:
 
-The integration owns the inbound webhook used by `ha-sip`. It then republishes those payloads inside Home Assistant as the `hacs_unifi_talk_webhook` event. That event is the supported automation surface.
+- `hacs_unifi_talk_webhook`
 
-## Installation
+That event is the supported trigger surface for automations, blueprints, and Node-RED.
 
-1. Install the `ha-sip` add-on from [arnonym/ha-plugins](https://github.com/arnonym/ha-plugins).
-2. Install this repository as a HACS custom integration.
-3. Add the integration from Settings -> Devices & Services.
-4. Fill in your UniFi Talk SIP extension details.
+## Main Features Added
 
-## Configuration Notes
+### Session tracking
 
-- `sip_options` automatically keeps `--ice false` because UniFi Talk generally needs it.
-- If `answer_mode` is `accept`, you must provide an incoming call file.
-- If you leave the webhook ID blank, the integration generates one.
-- Optional SSH password retrieval uses `fs_cli` on the UniFi host and requires the UniFi SSH password.
+Webhook events are now folded into a live in-memory call/session model keyed by `internal_id`. The integration tracks:
+
+- direction
+- state
+- caller and parsed caller
+- SIP account
+- entered menu ID
+- last DTMF digit
+- last playback metadata
+- timestamps for create, establish, disconnect, and update
+
+### Home Assistant entities
+
+The integration now provides:
+
+- call summary sensors
+- a call event entity
+- a notify entity for a default UniFi Talk target
+
+### Higher-level actions
+
+In addition to the raw `ha-sip` wrappers, the integration now includes:
+
+- `hacs_unifi_talk.announce`
+- `hacs_unifi_talk.answer_and_speak`
+
+These are easier to use for common automation tasks like alert calls, door/intercom flows, and spoken notifications.
+
+### Better configuration lifecycle
+
+- Config flow writes validated add-on options
+- Reconfigure flow updates setup data without removing the integration
+- Options flow handles notification defaults
+- Diagnostics export redacted runtime and config data
 
 ## Services
 
-The integration exposes these services under `hacs_unifi_talk`:
+Core actions:
 
 - `dial`
 - `hangup`
@@ -59,69 +81,26 @@ The integration exposes these services under `hacs_unifi_talk`:
 - `stop_playback`
 - `answer`
 
-Plain values like `8008675309`, `+18005551212`, or `**620` are normalized into SIP URIs automatically. Full `sip:` URIs are passed through unchanged.
+Higher-level actions:
 
-## Events
+- `announce`
+- `answer_and_speak`
 
-Inbound call and playback events are fired on the Home Assistant bus as:
+## Notify usage
 
-- `hacs_unifi_talk_webhook`
-
-The event payload mirrors the JSON received from `ha-sip`. Typical keys include:
-
-- `event`
-- `caller`
-- `parsed_caller`
-- `sip_account`
-- `internal_id`
-- `digit`
-- `message`
-- `audio_file`
-
-This is what automations and Node-RED should listen to. Do not bind your own automation to the same webhook ID that the integration uses internally.
-
-## Sensor
-
-The integration creates a sensor representing the latest call state. Its state is the latest event name, and attributes include caller details, internal call ID, last DTMF digit, playback metadata, and last update time.
+Set a default target in the integration settings, then target the notify entity with `notify.send_message`. The integration will place the call, speak the message, and optionally hang up afterward.
 
 ## Blueprint
 
-[`blueprints/automation/hacs_unifi_talk/ha_sip_incoming_router.yaml`](/Users/meharrington/Github/hacs_unifi_talk/blueprints/automation/hacs_unifi_talk/ha_sip_incoming_router.yaml) routes the `hacs_unifi_talk_webhook` event into separate automation branches for:
+[`blueprints/automation/hacs_unifi_talk/ha_sip_incoming_router.yaml`](/Users/meharrington/Github/hacs_unifi_talk/blueprints/automation/hacs_unifi_talk/ha_sip_incoming_router.yaml) routes the `hacs_unifi_talk_webhook` event by event type.
 
-- `incoming_call`
-- `call_established`
-- `entered_menu`
-- `dtmf_digit`
-- `playback_done`
-- `ring_timeout`
-- `timeout`
-- `call_disconnected`
+## Current Scope
 
-## Node-RED
+This is still primarily a `ha-sip`-backed integration. It does not yet implement direct UniFi Talk metadata features like voicemail sync, BLF presence, call logs, or recordings from UniFi itself.
 
-The example flows in [`nodered`](/Users/meharrington/Github/hacs_unifi_talk/nodered) should subscribe to the Home Assistant event `hacs_unifi_talk_webhook`, not to the raw webhook endpoint.
+## Next High-Value Work
 
-## Development
-
-Current repository baseline improvements:
-
-- Shared config normalization and add-on option building
-- Proper service lifecycle registration
-- Runtime state storage per config entry
-- Webhook handling with Home Assistant event fan-out
-- Real translation file support via `translations/en.json`
-- Cleaner service documentation and blueprint behavior
-- Basic CI scaffolding for static validation
-
-## Recommended Next Steps
-
-To move from a starter integration to something closer to Home Assistant best practice, the next high-value work is:
-
-1. Add automated tests for config flow, webhook handling, and service payload generation.
-2. Add diagnostics support so users can export redacted config/runtime state for bug reports.
-3. Add repair flows or clear error surfaces for missing Supervisor, missing `ha-sip`, and failed add-on restarts.
-4. Decide whether this should stay a thin `ha-sip` bridge or grow toward direct UniFi Talk API integration later.
-
-## License
-
-MIT
+1. Add automated tests.
+2. Add repairs for missing Supervisor or missing `ha-sip`.
+3. Add optional persistence for recent call history across restarts.
+4. Explore direct UniFi Talk metadata integration for voicemail, logs, presence, and recordings.

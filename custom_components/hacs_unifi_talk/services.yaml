@@ -219,3 +219,105 @@ answer:
       required: false
       example:
         message: Please enter your access code.
+
+announce:
+  name: Announce
+  description: Place a call, speak a TTS message, and optionally hang up when playback finishes.
+  fields:
+    number:
+      name: Number
+      description: Extension, phone number, or SIP URI to call.
+      required: true
+      selector:
+        text:
+    message:
+      name: Message
+      description: Message to synthesize and play once the call is established.
+      required: true
+      selector:
+        text:
+    title:
+      name: Title
+      description: Optional title prefix that will be spoken before the message.
+      required: false
+      selector:
+        text:
+    tts_language:
+      name: TTS language
+      description: Optional language override for this announcement.
+      required: false
+      selector:
+        text:
+    ring_timeout:
+      name: Ring timeout
+      description: Number of seconds to let the remote side ring.
+      required: false
+      default: 15
+      selector:
+        number:
+          min: 1
+          mode: box
+    sip_account:
+      name: SIP account
+      description: Account index to use inside ha-sip.
+      required: false
+      default: 1
+      selector:
+        number:
+          min: 1
+          mode: box
+    hangup_after_speaking:
+      name: Hang up after speaking
+      description: Automatically hang up after the announcement has played.
+      required: false
+      default: true
+      selector:
+        boolean:
+    webhook_to_call:
+      name: Webhook map
+      description: Optional ha-sip webhook callback mapping for this call.
+      required: false
+      example:
+        playback_done: my_hook
+
+answer_and_speak:
+  name: Answer and speak
+  description: Answer an inbound call, speak a TTS message, and optionally hang up when playback finishes.
+  fields:
+    number:
+      name: Internal call ID
+      description: Internal call identifier from the incoming event payload.
+      required: true
+      selector:
+        text:
+    message:
+      name: Message
+      description: Message to synthesize and play once the call is answered.
+      required: true
+      selector:
+        text:
+    title:
+      name: Title
+      description: Optional title prefix that will be spoken before the message.
+      required: false
+      selector:
+        text:
+    tts_language:
+      name: TTS language
+      description: Optional language override for this announcement.
+      required: false
+      selector:
+        text:
+    hangup_after_speaking:
+      name: Hang up after speaking
+      description: Automatically hang up after the announcement has played.
+      required: false
+      default: true
+      selector:
+        boolean:
+    webhook_to_call:
+      name: Webhook map
+      description: Optional ha-sip webhook callback mapping for this call.
+      required: false
+      example:
+        playback_done: my_hook

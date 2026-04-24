@@ -15,10 +15,14 @@ from .const import (
     ADDON_SLUG,
     CONF_ANSWER_MODE,
     CONF_CACHE_DIR,
+    CONF_DEFAULT_TARGET,
     CONF_ENABLE_SSH,
     CONF_GLOBAL_OPTIONS,
     CONF_INCOMING_FILE,
     CONF_NAME_SERVER,
+    CONF_NOTIFY_HANGUP,
+    CONF_NOTIFY_RING_TIMEOUT,
+    CONF_NOTIFY_SIP_ACCOUNT,
     CONF_PASSWORD,
     CONF_REALM,
     CONF_SETTLE_TIME,
@@ -37,6 +41,8 @@ from .const import (
     CONF_WEBHOOK_ID,
     DEFAULT_ANSWER_MODE,
     DEFAULT_CACHE_DIR,
+    DEFAULT_NOTIFY_RING_TIMEOUT,
+    DEFAULT_NOTIFY_SIP_ACCOUNT,
     DEFAULT_SETTLE_TIME,
     DEFAULT_SIP_HOST,
     DEFAULT_SIP_PORT,
@@ -44,6 +50,7 @@ from .const import (
     DEFAULT_TTS_ENGINE_ID,
     DEFAULT_TTS_LANGUAGE,
     DOMAIN,
+    NOTIFY_OPTION_KEYS,
     REQUIRED_SIP_OPTION,
 )
 from .supervisor import (
@@ -68,6 +75,10 @@ DEFAULTS = {
     CONF_TTS_VOICE: "",
     CONF_TTS_DEBUG: False,
     CONF_WEBHOOK_ID: "",
+    CONF_DEFAULT_TARGET: "",
+    CONF_NOTIFY_RING_TIMEOUT: DEFAULT_NOTIFY_RING_TIMEOUT,
+    CONF_NOTIFY_SIP_ACCOUNT: DEFAULT_NOTIFY_SIP_ACCOUNT,
+    CONF_NOTIFY_HANGUP: True,
     CONF_CACHE_DIR: DEFAULT_CACHE_DIR,
     CONF_NAME_SERVER: "",
     CONF_GLOBAL_OPTIONS: "",
@@ -111,6 +122,16 @@ def _schema(user_input: dict[str, Any] | None = None) -> vol.Schema:
             vol.Optional(CONF_TTS_VOICE, default=values[CONF_TTS_VOICE]): cv.string,
             vol.Optional(CONF_TTS_DEBUG, default=values[CONF_TTS_DEBUG]): bool,
             vol.Optional(CONF_WEBHOOK_ID, default=values[CONF_WEBHOOK_ID]): cv.string,
+            vol.Optional(
+                CONF_DEFAULT_TARGET, default=values[CONF_DEFAULT_TARGET]
+            ): cv.string,
+            vol.Optional(
+                CONF_NOTIFY_RING_TIMEOUT, default=values[CONF_NOTIFY_RING_TIMEOUT]
+            ): vol.All(vol.Coerce(int), vol.Range(min=1)),
+            vol.Optional(
+                CONF_NOTIFY_SIP_ACCOUNT, default=values[CONF_NOTIFY_SIP_ACCOUNT]
+            ): vol.All(vol.Coerce(int), vol.Range(min=1)),
+            vol.Optional(CONF_NOTIFY_HANGUP, default=values[CONF_NOTIFY_HANGUP]): bool,
             vol.Required(CONF_CACHE_DIR, default=values[CONF_CACHE_DIR]): NON_EMPTY_STRING,
             vol.Optional(CONF_NAME_SERVER, default=values[CONF_NAME_SERVER]): cv.string,
             vol.Optional(
@@ -126,6 +147,24 @@ def _schema(user_input: dict[str, Any] | None = None) -> vol.Schema:
             vol.Optional(
                 CONF_SSH_PASSWORD, default=values[CONF_SSH_PASSWORD]
             ): cv.string,
+        }
+    )
+
+
+def _options_schema(user_input: dict[str, Any] | None = None) -> vol.Schema:
+    values = {**DEFAULTS, **(user_input or {})}
+    return vol.Schema(
+        {
+            vol.Optional(
+                CONF_DEFAULT_TARGET, default=values[CONF_DEFAULT_TARGET]
+            ): cv.string,
+            vol.Optional(
+                CONF_NOTIFY_RING_TIMEOUT, default=values[CONF_NOTIFY_RING_TIMEOUT]
+            ): vol.All(vol.Coerce(int), vol.Range(min=1)),
+            vol.Optional(
+                CONF_NOTIFY_SIP_ACCOUNT, default=values[CONF_NOTIFY_SIP_ACCOUNT]
+            ): vol.All(vol.Coerce(int), vol.Range(min=1)),
+            vol.Optional(CONF_NOTIFY_HANGUP, default=values[CONF_NOTIFY_HANGUP]): bool,
         }
     )
 
@@ -147,6 +186,7 @@ def _normalize_input(user_input: dict[str, Any]) -> dict[str, Any]:
         CONF_TTS_LANGUAGE,
         CONF_TTS_VOICE,
         CONF_WEBHOOK_ID,
+        CONF_DEFAULT_TARGET,
         CONF_CACHE_DIR,
         CONF_NAME_SERVER,
         CONF_GLOBAL_OPTIONS,
@@ -172,6 +212,14 @@ def _ensure_required_sip_option(options: str) -> str:
     if not normalized:
         return REQUIRED_SIP_OPTION
     return f"{normalized} {REQUIRED_SIP_OPTION}"
+
+
+def _merge_entry_input(config_entry: config_entries.ConfigEntry) -> dict[str, Any]:
+    merged = dict(config_entry.data)
+    for key in NOTIFY_OPTION_KEYS:
+        if key in config_entry.options:
+            merged[key] = config_entry.options[key]
+    return merged
 
 
 def _build_addon_options(data: dict[str, Any]) -> dict[str, Any]:
@@ -219,6 +267,38 @@ def _validate_local_rules(data: dict[str, Any]) -> dict[str, str]:
     return errors
 
 
+async def _async_validate_and_apply(
+    hass: HomeAssistant, data: dict[str, Any]
+) -> dict[str, str]:
+    errors = _validate_local_rules(data)
+    if errors:
+        return errors
+
+    try:
+        await get_addon_info(hass, ADDON_SLUG)
+    except SupervisorError:
+        return {"base": "addon_missing"}
+
+    if data[CONF_ENABLE_SSH] and not data[CONF_PASSWORD]:
+        password = await _maybe_fetch_password_over_ssh(hass, data)
+        if not password:
+            return {"base": "ssh_password_fetch_failed"}
+        data[CONF_PASSWORD] = password
+
+    if not data[CONF_WEBHOOK_ID]:
+        data[CONF_WEBHOOK_ID] = webhook_comp.async_generate_id()
+
+    try:
+        options = _build_addon_options(data)
+        await validate_addon_options(hass, options, ADDON_SLUG)
+        await set_addon_options(hass, options, ADDON_SLUG)
+        await restart_addon(hass, ADDON_SLUG)
+    except SupervisorError:
+        return {"base": "addon_options_failed"}
+
+    return {}
+
+
 class Flow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
@@ -230,46 +310,39 @@ class Flow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             data = _normalize_input(user_input)
-            errors = _validate_local_rules(data)
-
-            if not errors:
-                try:
-                    await get_addon_info(self.hass, ADDON_SLUG)
-                except SupervisorError:
-                    errors["base"] = "addon_missing"
-
-            if (
-                not errors
-                and data[CONF_ENABLE_SSH]
-                and not data[CONF_PASSWORD]
-            ):
-                password = await _maybe_fetch_password_over_ssh(self.hass, data)
-                if not password:
-                    errors["base"] = "ssh_password_fetch_failed"
-                else:
-                    data[CONF_PASSWORD] = password
-
-            if not errors:
-                if not data[CONF_WEBHOOK_ID]:
-                    data[CONF_WEBHOOK_ID] = webhook_comp.async_generate_id()
-
-            if not errors:
-                try:
-                    options = _build_addon_options(data)
-                    await validate_addon_options(self.hass, options, ADDON_SLUG)
-                    await set_addon_options(self.hass, options, ADDON_SLUG)
-                    await restart_addon(self.hass, ADDON_SLUG)
-                except SupervisorError:
-                    errors["base"] = "addon_options_failed"
-
+            errors = await _async_validate_and_apply(self.hass, data)
             if not errors:
                 return self.async_create_entry(title="UniFi Talk", data=data)
-
             user_input = data
 
         return self.async_show_form(
             step_id="user",
             data_schema=_schema(user_input),
+            errors=errors,
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        entry = self._get_reconfigure_entry()
+        current = _normalize_input(_merge_entry_input(entry))
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            data = _normalize_input({**current, **user_input})
+            errors = await _async_validate_and_apply(self.hass, data)
+            if not errors:
+                await self.async_set_unique_id(f"{DOMAIN}_singleton")
+                self._abort_if_unique_id_mismatch()
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data_updates=data,
+                )
+            current = data
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=_schema(current),
             errors=errors,
         )
 
@@ -285,44 +358,17 @@ class OptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        errors: dict[str, str] = {}
-        current = _normalize_input(
-            {**self.config_entry.data, **self.config_entry.options}
-        )
+        current = _normalize_input(_merge_entry_input(self.config_entry))
 
         if user_input is not None:
             data = _normalize_input({**current, **user_input})
-            errors = _validate_local_rules(data)
-
-            if not errors and data[CONF_ENABLE_SSH] and not data[CONF_PASSWORD]:
-                password = await _maybe_fetch_password_over_ssh(self.hass, data)
-                if not password:
-                    errors["base"] = "ssh_password_fetch_failed"
-                else:
-                    data[CONF_PASSWORD] = password
-
-            if not errors:
-                if not data[CONF_WEBHOOK_ID]:
-                    data[CONF_WEBHOOK_ID] = webhook_comp.async_generate_id()
-
-            if not errors:
-                try:
-                    options = _build_addon_options(data)
-                    await validate_addon_options(self.hass, options, ADDON_SLUG)
-                    await set_addon_options(self.hass, options, ADDON_SLUG)
-                    await restart_addon(self.hass, ADDON_SLUG)
-                except SupervisorError:
-                    errors["base"] = "addon_options_failed"
-
-            if not errors:
-                return self.async_create_entry(title="", data=data)
-
-            current = data
+            option_data = {key: data[key] for key in NOTIFY_OPTION_KEYS}
+            return self.async_create_entry(title="", data=option_data)
 
         return self.async_show_form(
             step_id="init",
-            data_schema=_schema(current),
-            errors=errors,
+            data_schema=_options_schema(current),
+            errors={},
         )
 
 

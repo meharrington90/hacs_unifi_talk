@@ -1,7 +1,7 @@
 {
   "domain": "hacs_unifi_talk",
   "name": "UniFi Talk (ha-sip)",
-  "version": "2025.9.1",
+  "version": "2025.9.2",
   "documentation": "https://github.com/meharrington90/hacs_unifi_talk",
   "issue_tracker": "https://github.com/meharrington90/hacs_unifi_talk/issues",
   "codeowners": ["@meharrington90"],
