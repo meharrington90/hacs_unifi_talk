@@ -29,6 +29,21 @@ Only one config entry is supported.
 - Incoming `ha-sip` webhook payloads are republished on the Home Assistant event bus as `hacs_unifi_talk_webhook`.
 - Runtime call/session state is tracked by `internal_id` and stored across Home Assistant restarts.
 
+## Create The UniFi Talk SIP Extension
+
+Before adding the integration, create a UniFi Talk third-party device so you have the SIP values needed by the Home Assistant config flow.
+
+1. Open the UniFi Talk application.
+2. Go to `Phones > Add Third-Party Device`.
+3. Enter a device name and assign it to a user.
+4. Open the new device and go to `Overview`.
+5. Copy the values shown there:
+   - `SIP Server Host`
+   - `SIP Username`
+   - `SIP Password`
+
+Ubiquiti documents this flow here: [Configuring Third-Party SIP Server with UniFi Access](https://help.ui.com/hc/en-us/articles/31504711305879-Configuring-Third-Party-SIP-Server-with-UniFi-Access).
+
 ## Configuration
 
 Core setup is handled in the config flow and reconfigure flow. Notification defaults are handled in the integration options flow.
@@ -43,6 +58,40 @@ Core setup is handled in the config flow and reconfigure flow. Notification defa
 | `cache_dir`, `name_server`, `global_options`, `sip_options` | Advanced `ha-sip` options. `--ice false` is always enforced in `sip_options`. |
 | SSH password fetch | Optional. If enabled and the SIP password is blank, the integration will try to fetch it over SSH from the UniFi host. |
 | Notify defaults | Default target, ring timeout, SIP account, and whether to hang up after speaking. |
+
+### Mapping UniFi Talk Values To Home Assistant Fields
+
+| Home Assistant field | What to enter |
+| --- | --- |
+| `sip_host` | UniFi Talk `SIP Server Host`. The code expects a non-empty host or IP. |
+| `sip_port` | Usually `5060`. The config flow accepts ports `1-65535`; `5060` is the integration default. |
+| `username` | UniFi Talk `SIP Username`. This is the extension/username shown on the device overview. |
+| `password` | UniFi Talk `SIP Password`. If you use SSH password fetch, you can leave this blank. |
+| `realm` | Start with `*`, which is the integration default. UniFi Talk does not normally expose a separate realm field for the third-party device flow. |
+
+### Other Config Fields
+
+- `answer_mode` must be `listen` or `accept`.
+- `incoming_call_file` is only needed when `answer_mode` is `accept`.
+- `webhook_id` can be left blank and Home Assistant will generate one.
+- `cache_dir` must be a non-empty path; the integration default is `/config/hacs-unifi-talk/audio_cache`.
+- `sip_options` can be left at the default unless you know you need more; the integration always enforces `--ice false`.
+
+### Using SSH To Fetch The SIP Password
+
+If you do not want to paste the SIP password manually:
+
+- Leave `password` blank.
+- Enable `Fetch SIP password over SSH`.
+- Set `ssh_host` to the UniFi Console host or IP.
+- Set `ssh_port` to your SSH port, usually `22`.
+- Set `ssh_user` to your SSH username, usually `root`.
+- Set `ssh_password` to the UniFi Console SSH password.
+
+Important:
+
+- `ssh_password` is the SSH login password for the UniFi Console, not the SIP password.
+- The integration uses SSH only to retrieve the SIP password for the selected extension.
 
 If SSH password fetch is enabled, the integration runs:
 
