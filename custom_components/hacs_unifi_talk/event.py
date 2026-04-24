@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from homeassistant.components.event import EventEntity
-from homeassistant.core import callback, HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 

@@ -1,16 +1,16 @@
 {
   "domain": "hacs_unifi_talk",
   "name": "UniFi Talk (ha-sip)",
-  "version": "2025.9.3",
-  "documentation": "https://github.com/meharrington90/hacs_unifi_talk",
-  "issue_tracker": "https://github.com/meharrington90/hacs_unifi_talk/issues",
+  "after_dependencies": ["hassio"],
   "codeowners": ["@meharrington90"],
   "config_flow": true,
+  "documentation": "https://github.com/meharrington90/hacs_unifi_talk",
   "integration_type": "service",
   "iot_class": "local_push",
-  "after_dependencies": ["hassio"],
+  "issue_tracker": "https://github.com/meharrington90/hacs_unifi_talk/issues",
   "loggers": ["paramiko"],
   "requirements": [
     "paramiko>=3.4.0"
-  ]
+  ],
+  "version": "2025.9.3"
 }

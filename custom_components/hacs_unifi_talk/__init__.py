@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field, fields
-from datetime import UTC, datetime
 import logging
 import re
+from dataclasses import asdict, dataclass, field, fields
+from datetime import UTC, datetime
 from typing import Any
 
 from aiohttp import web
@@ -45,6 +45,7 @@ from .entity import async_ensure_device
 from .supervisor import SupervisorError, get_addon_info, set_system_managed
 
 _LOGGER = logging.getLogger(__name__)
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 SERVICE_DIAL = "dial"
 SERVICE_HANGUP = "hangup"
