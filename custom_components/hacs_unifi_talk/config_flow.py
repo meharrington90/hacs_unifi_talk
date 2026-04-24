@@ -7,7 +7,7 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.components import webhook as webhook_comp
-from homeassistant.core import HomeAssistant
+from homeassistant.core import callback, HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import config_validation as cv
 
@@ -90,18 +90,47 @@ DEFAULTS = {
     CONF_SSH_PASSWORD: "",
 }
 
+CORE_CONFIG_KEYS: tuple[str, ...] = (
+    CONF_SIP_HOST,
+    CONF_SIP_PORT,
+    CONF_USERNAME,
+    CONF_PASSWORD,
+    CONF_REALM,
+    CONF_ANSWER_MODE,
+    CONF_SETTLE_TIME,
+    CONF_INCOMING_FILE,
+    CONF_TTS_ENGINE_ID,
+    CONF_TTS_LANGUAGE,
+    CONF_TTS_VOICE,
+    CONF_TTS_DEBUG,
+    CONF_WEBHOOK_ID,
+    CONF_CACHE_DIR,
+    CONF_NAME_SERVER,
+    CONF_GLOBAL_OPTIONS,
+    CONF_SIP_OPTIONS,
+    CONF_ENABLE_SSH,
+    CONF_SSH_HOST,
+    CONF_SSH_PORT,
+    CONF_SSH_USER,
+    CONF_SSH_PASSWORD,
+)
+
 NON_EMPTY_STRING = vol.All(cv.string, vol.Length(min=1))
 
 
-def _schema(user_input: dict[str, Any] | None = None) -> vol.Schema:
+def _config_schema(user_input: dict[str, Any] | None = None) -> vol.Schema:
     values = {**DEFAULTS, **(user_input or {})}
     return vol.Schema(
         {
-            vol.Required(CONF_SIP_HOST, default=values[CONF_SIP_HOST]): NON_EMPTY_STRING,
+            vol.Required(
+                CONF_SIP_HOST, default=values[CONF_SIP_HOST]
+            ): NON_EMPTY_STRING,
             vol.Required(CONF_SIP_PORT, default=values[CONF_SIP_PORT]): vol.All(
                 vol.Coerce(int), vol.Range(min=1, max=65535)
             ),
-            vol.Required(CONF_USERNAME, default=values[CONF_USERNAME]): NON_EMPTY_STRING,
+            vol.Required(
+                CONF_USERNAME, default=values[CONF_USERNAME]
+            ): NON_EMPTY_STRING,
             vol.Optional(CONF_PASSWORD, default=values[CONF_PASSWORD]): cv.string,
             vol.Required(CONF_REALM, default=values[CONF_REALM]): NON_EMPTY_STRING,
             vol.Required(
@@ -122,17 +151,9 @@ def _schema(user_input: dict[str, Any] | None = None) -> vol.Schema:
             vol.Optional(CONF_TTS_VOICE, default=values[CONF_TTS_VOICE]): cv.string,
             vol.Optional(CONF_TTS_DEBUG, default=values[CONF_TTS_DEBUG]): bool,
             vol.Optional(CONF_WEBHOOK_ID, default=values[CONF_WEBHOOK_ID]): cv.string,
-            vol.Optional(
-                CONF_DEFAULT_TARGET, default=values[CONF_DEFAULT_TARGET]
-            ): cv.string,
-            vol.Optional(
-                CONF_NOTIFY_RING_TIMEOUT, default=values[CONF_NOTIFY_RING_TIMEOUT]
-            ): vol.All(vol.Coerce(int), vol.Range(min=1)),
-            vol.Optional(
-                CONF_NOTIFY_SIP_ACCOUNT, default=values[CONF_NOTIFY_SIP_ACCOUNT]
-            ): vol.All(vol.Coerce(int), vol.Range(min=1)),
-            vol.Optional(CONF_NOTIFY_HANGUP, default=values[CONF_NOTIFY_HANGUP]): bool,
-            vol.Required(CONF_CACHE_DIR, default=values[CONF_CACHE_DIR]): NON_EMPTY_STRING,
+            vol.Required(
+                CONF_CACHE_DIR, default=values[CONF_CACHE_DIR]
+            ): NON_EMPTY_STRING,
             vol.Optional(CONF_NAME_SERVER, default=values[CONF_NAME_SERVER]): cv.string,
             vol.Optional(
                 CONF_GLOBAL_OPTIONS, default=values[CONF_GLOBAL_OPTIONS]
@@ -222,6 +243,12 @@ def _merge_entry_input(config_entry: config_entries.ConfigEntry) -> dict[str, An
     return merged
 
 
+def _split_entry_payload(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    config_data = {key: data[key] for key in CORE_CONFIG_KEYS}
+    option_data = {key: data[key] for key in NOTIFY_OPTION_KEYS}
+    return config_data, option_data
+
+
 def _build_addon_options(data: dict[str, Any]) -> dict[str, Any]:
     host = data[CONF_SIP_HOST]
     username = data[CONF_USERNAME]
@@ -262,7 +289,11 @@ def _validate_local_rules(data: dict[str, Any]) -> dict[str, str]:
     errors: dict[str, str] = {}
     if data[CONF_ANSWER_MODE] == "accept" and not data[CONF_INCOMING_FILE]:
         errors["base"] = "incoming_file_required"
-    elif data[CONF_ENABLE_SSH] and not data[CONF_PASSWORD] and not data[CONF_SSH_PASSWORD]:
+    elif (
+        data[CONF_ENABLE_SSH]
+        and not data[CONF_PASSWORD]
+        and not data[CONF_SSH_PASSWORD]
+    ):
         errors["base"] = "ssh_credentials_missing"
     return errors
 
@@ -302,7 +333,9 @@ async def _async_validate_and_apply(
 class Flow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
         errors: dict[str, str] = {}
 
         await self.async_set_unique_id(f"{DOMAIN}_singleton")
@@ -312,12 +345,17 @@ class Flow(config_entries.ConfigFlow, domain=DOMAIN):
             data = _normalize_input(user_input)
             errors = await _async_validate_and_apply(self.hass, data)
             if not errors:
-                return self.async_create_entry(title="UniFi Talk", data=data)
+                config_data, option_data = _split_entry_payload(data)
+                return self.async_create_entry(
+                    title="UniFi Talk",
+                    data=config_data,
+                    options=option_data,
+                )
             user_input = data
 
         return self.async_show_form(
             step_id="user",
-            data_schema=_schema(user_input),
+            data_schema=_config_schema(user_input),
             errors=errors,
         )
 
@@ -334,24 +372,26 @@ class Flow(config_entries.ConfigFlow, domain=DOMAIN):
             if not errors:
                 await self.async_set_unique_id(f"{DOMAIN}_singleton")
                 self._abort_if_unique_id_mismatch()
+                config_data, _ = _split_entry_payload(data)
                 return self.async_update_reload_and_abort(
                     entry,
-                    data_updates=data,
+                    data_updates=config_data,
                 )
             current = data
 
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=_schema(current),
+            data_schema=_config_schema(current),
             errors=errors,
         )
 
     @staticmethod
+    @callback
     def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> OptionsFlow:
         return OptionsFlow(config_entry)
 
 
-class OptionsFlow(config_entries.OptionsFlow):
+class OptionsFlow(config_entries.OptionsFlowWithReload):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self.config_entry = config_entry
 
@@ -367,7 +407,9 @@ class OptionsFlow(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="init",
-            data_schema=_options_schema(current),
+            data_schema=self.add_suggested_values_to_schema(
+                _options_schema(current), self.config_entry.options
+            ),
             errors={},
         )
 

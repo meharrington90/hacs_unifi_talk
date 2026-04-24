@@ -43,14 +43,17 @@ async def _request(
     ) as response:
         if response.status >= 400:
             raise SupervisorError(
-                f"{method} {path} failed with status {response.status}: {await response.text()}"
+                f"{method} {path} failed with status {response.status}: "
+                f"{await response.text()}"
             )
 
         payload = await response.json()
 
     if isinstance(payload, dict):
         if payload.get("result") == "error":
-            raise SupervisorError(payload.get("message", "Supervisor API returned an error"))
+            raise SupervisorError(
+                payload.get("message", "Supervisor API returned an error")
+            )
         return payload.get("data", payload)
 
     return payload

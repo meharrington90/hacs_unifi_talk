@@ -8,8 +8,9 @@
 - Exposes call-control actions for dial, answer, DTMF, transfer, bridging, playback, and hangup
 - Adds higher-level actions for `announce` and `answer_and_speak`
 - Tracks active and recent call sessions instead of only one last event
+- Persists recent call history and summary state across Home Assistant restarts
 - Publishes `hacs_unifi_talk_webhook` on the Home Assistant event bus
-- Exposes sensors for last event, active calls, last caller, and last DTMF digit
+- Exposes sensors and a binary sensor for last event, active calls, call-in-progress state, last caller, and last DTMF digit
 - Exposes an event entity for call events
 - Exposes a notify entity for a configured default target
 - Supports reconfigure and diagnostics
@@ -48,6 +49,7 @@ Webhook events are now folded into a live in-memory call/session model keyed by 
 The integration now provides:
 
 - call summary sensors
+- a binary sensor for call-in-progress automations
 - a call event entity
 - a notify entity for a default UniFi Talk target
 
@@ -66,6 +68,7 @@ These are easier to use for common automation tasks like alert calls, door/inter
 - Reconfigure flow updates setup data without removing the integration
 - Options flow handles notification defaults
 - Diagnostics export redacted runtime and config data
+- Runtime call history survives restarts using Home Assistant storage
 
 ## Services
 
@@ -102,5 +105,5 @@ This is still primarily a `ha-sip`-backed integration. It does not yet implement
 
 1. Add automated tests.
 2. Add repairs for missing Supervisor or missing `ha-sip`.
-3. Add optional persistence for recent call history across restarts.
+3. Add direct device triggers for common call events.
 4. Explore direct UniFi Talk metadata integration for voicemail, logs, presence, and recordings.

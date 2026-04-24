@@ -3,6 +3,7 @@ from homeassistant.const import Platform
 DOMAIN = "hacs_unifi_talk"
 
 PLATFORMS: list[Platform] = [
+    Platform.BINARY_SENSOR,
     Platform.SENSOR,
     Platform.EVENT,
     Platform.NOTIFY,
@@ -13,6 +14,8 @@ EVENT_WEBHOOK = f"{DOMAIN}_webhook"
 SIGNAL_CALL_STATE = f"{DOMAIN}_call_state"
 
 DATA_SERVICES_REGISTERED = "services_registered"
+STORAGE_KEY = f"{DOMAIN}_runtime"
+STORAGE_VERSION = 1
 
 DEFAULT_SIP_HOST = "192.168.1.1"
 DEFAULT_SIP_PORT = 5060

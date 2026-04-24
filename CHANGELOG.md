@@ -6,8 +6,10 @@ All notable changes to **HACS UniFi Talk (ha-sip)** will be documented here.
 ### Added
 - `translations/en.json` so the config and options flows use proper Home Assistant translation files.
 - Basic GitHub Actions workflows for HACS validation and static checks.
+- A Hassfest workflow.
 - `pyproject.toml` with Ruff configuration.
 - Additional Home Assistant surfaces:
+  - `binary_sensor` for call-in-progress state
   - `event` entity for webhook-backed call events
   - `notify` entity for a configured default call target
   - richer call summary sensors
@@ -16,13 +18,15 @@ All notable changes to **HACS UniFi Talk (ha-sip)** will be documented here.
   - `hacs_unifi_talk.answer_and_speak`
 - Redacted diagnostics export.
 - Reconfigure flow support.
+- Runtime state persistence across restarts using Home Assistant storage.
 
 ### Changed
 - Refactored integration setup so services are registered once, config/options are merged consistently, and runtime state is tracked per config entry.
 - Fixed webhook handling to update the sensor and republish payloads as the `hacs_unifi_talk_webhook` event.
+- Registered a real device up front so entities and webhook events share a stable device identity.
 - Reworked the blueprint to listen for Home Assistant events instead of trying to reuse the integration's webhook ID.
 - Improved Supervisor API handling and add-on option generation.
-- Updated documentation and service descriptions to reflect the actual supported flow.
+- Updated documentation, translations, and service descriptions to reflect the actual supported flow.
 - Replaced the single "last call" state model with active/recent call session tracking keyed by `internal_id`.
 
 ## [2025.9.0] - 2025-09-17

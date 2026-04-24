@@ -1,23 +1,13 @@
 from __future__ import annotations
 
 from homeassistant.components.notify import NotifyEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import UniFiTalkConfigEntry, get_notify_defaults
 from .const import DOMAIN
-
-
-def _device_info(entry: ConfigEntry) -> DeviceInfo:
-    return DeviceInfo(
-        identifiers={(DOMAIN, entry.entry_id)},
-        manufacturer="Ubiquiti",
-        model="UniFi Talk via ha-sip",
-        name="UniFi Talk",
-    )
+from .entity import device_info
 
 
 async def async_setup_entry(
@@ -37,7 +27,7 @@ class UniFiTalkNotifyEntity(NotifyEntity):
         self.hass = hass
         self.entry = entry
         self._attr_unique_id = f"{entry.entry_id}_default_target"
-        self._attr_device_info = _device_info(entry)
+        self._attr_device_info = device_info(entry)
 
     @property
     def available(self) -> bool:
@@ -59,7 +49,8 @@ class UniFiTalkNotifyEntity(NotifyEntity):
         defaults = get_notify_defaults(self.entry)
         if not defaults["target"]:
             raise ServiceValidationError(
-                "Set a default target in the UniFi Talk integration options before using notify."
+                "Set a default target in the UniFi Talk integration options "
+                "before using notify."
             )
 
         await self.hass.services.async_call(

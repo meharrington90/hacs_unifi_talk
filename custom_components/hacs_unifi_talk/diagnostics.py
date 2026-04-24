@@ -6,12 +6,7 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.core import HomeAssistant
 
 from . import UniFiTalkConfigEntry
-from .const import (
-    CONF_PASSWORD,
-    CONF_SSH_PASSWORD,
-    CONF_SIP_HOST,
-    CONF_WEBHOOK_ID,
-)
+from .const import CONF_PASSWORD, CONF_SIP_HOST, CONF_SSH_PASSWORD, CONF_WEBHOOK_ID
 
 TO_REDACT = {
     CONF_PASSWORD,
@@ -35,7 +30,10 @@ async def async_get_config_entry_diagnostics(
         "runtime_summary": async_redact_data(runtime.summary(), TO_REDACT),
         "recent_events": async_redact_data(runtime.recent_events, TO_REDACT),
         "calls": async_redact_data(
-            {internal_id: session.to_dict() for internal_id, session in runtime.calls.items()},
+            {
+                internal_id: session.to_dict()
+                for internal_id, session in runtime.calls.items()
+            },
             TO_REDACT,
         ),
     }

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass, field, fields
+from datetime import UTC, datetime
 import logging
 import re
 from typing import Any
@@ -18,11 +18,11 @@ from homeassistant.exceptions import (
 )
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     ADDON_SLUG,
-    CALL_EVENT_TYPES,
     CONF_DEFAULT_TARGET,
     CONF_NOTIFY_HANGUP,
     CONF_NOTIFY_RING_TIMEOUT,
@@ -37,8 +37,11 @@ from .const import (
     NOTIFY_OPTION_KEYS,
     PLATFORMS,
     SIGNAL_CALL_STATE,
+    STORAGE_KEY,
+    STORAGE_VERSION,
     TERMINAL_CALL_EVENTS,
 )
+from .entity import async_ensure_device
 from .supervisor import SupervisorError, get_addon_info, set_system_managed
 
 _LOGGER = logging.getLogger(__name__)
@@ -203,6 +206,8 @@ class CallSession:
 @dataclass
 class UniFiTalkRuntimeData:
     config: dict[str, Any]
+    store: Store[dict[str, Any]]
+    device_id: str | None = None
     calls: dict[str, CallSession] = field(default_factory=dict)
     recent_events: list[dict[str, Any]] = field(default_factory=list)
     last_payload: dict[str, Any] = field(default_factory=dict)
@@ -246,6 +251,7 @@ class UniFiTalkRuntimeData:
 
 
 type UniFiTalkConfigEntry = ConfigEntry[UniFiTalkRuntimeData]
+CALL_SESSION_FIELDS = {field_info.name for field_info in fields(CallSession)}
 
 
 def _merge_entry_config(entry: ConfigEntry) -> dict[str, Any]:
@@ -254,6 +260,75 @@ def _merge_entry_config(entry: ConfigEntry) -> dict[str, Any]:
         if key in entry.options:
             merged[key] = entry.options[key]
     return merged
+
+
+def _runtime_storage_key(entry_id: str) -> str:
+    return f"{STORAGE_KEY}_{entry_id}"
+
+
+def _serialize_runtime(runtime: UniFiTalkRuntimeData) -> dict[str, Any]:
+    return {
+        "calls": {
+            internal_id: session.to_dict()
+            for internal_id, session in runtime.calls.items()
+        },
+        "recent_events": runtime.recent_events,
+        "last_payload": runtime.last_payload,
+        "last_event": runtime.last_event,
+        "last_updated": runtime.last_updated,
+        "last_caller": runtime.last_caller,
+        "last_internal_id": runtime.last_internal_id,
+        "last_incoming_call": runtime.last_incoming_call,
+        "last_dtmf_digit": runtime.last_dtmf_digit,
+        "last_menu_id": runtime.last_menu_id,
+        "last_message": runtime.last_message,
+        "last_audio_file": runtime.last_audio_file,
+    }
+
+
+def _restore_call_session(
+    internal_id: str, payload: dict[str, Any]
+) -> CallSession | None:
+    session_data = {
+        key: value for key, value in payload.items() if key in CALL_SESSION_FIELDS
+    }
+    session_data.setdefault("internal_id", internal_id)
+    if not session_data.get("internal_id"):
+        return None
+    return CallSession(**session_data)
+
+
+def _restore_runtime(
+    runtime: UniFiTalkRuntimeData, payload: dict[str, Any] | None
+) -> None:
+    if not isinstance(payload, dict):
+        return
+
+    calls = payload.get("calls")
+    if isinstance(calls, dict):
+        runtime.calls = {}
+        for internal_id, session_data in calls.items():
+            if not isinstance(session_data, dict):
+                continue
+            session = _restore_call_session(internal_id, session_data)
+            if session is not None:
+                runtime.calls[internal_id] = session
+
+    runtime.recent_events = list(payload.get("recent_events") or [])[:25]
+    runtime.last_payload = dict(payload.get("last_payload") or {})
+    runtime.last_event = payload.get("last_event") or runtime.last_event
+    runtime.last_updated = payload.get("last_updated")
+    runtime.last_caller = payload.get("last_caller")
+    runtime.last_internal_id = payload.get("last_internal_id")
+    runtime.last_incoming_call = payload.get("last_incoming_call")
+    runtime.last_dtmf_digit = payload.get("last_dtmf_digit")
+    runtime.last_menu_id = payload.get("last_menu_id")
+    runtime.last_message = payload.get("last_message")
+    runtime.last_audio_file = payload.get("last_audio_file")
+
+
+def _schedule_runtime_save(runtime: UniFiTalkRuntimeData) -> None:
+    runtime.store.async_delay_save(lambda: _serialize_runtime(runtime), 3.0)
 
 
 def _normalize_sip_target(number: str, host: str) -> str:
@@ -365,7 +440,7 @@ def _prune_call_sessions(runtime: UniFiTalkRuntimeData) -> None:
 def _update_runtime_from_webhook(
     runtime: UniFiTalkRuntimeData, payload: dict[str, Any]
 ) -> dict[str, Any]:
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     event = payload.get("event") or "idle"
     internal_id = payload.get("internal_id")
     parsed_caller = payload.get("parsed_caller")
@@ -636,24 +711,35 @@ def _register_services(hass: HomeAssistant) -> None:
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    hass.data.setdefault(DOMAIN, {DATA_SERVICES_REGISTERED: False})
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN].setdefault(DATA_SERVICES_REGISTERED, False)
     _register_services(hass)
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: UniFiTalkConfigEntry) -> bool:
-    hass.data.setdefault(DOMAIN, {DATA_SERVICES_REGISTERED: False})
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN].setdefault(DATA_SERVICES_REGISTERED, False)
     _register_services(hass)
 
     try:
         await get_addon_info(hass, ADDON_SLUG)
     except SupervisorError as err:
         raise ConfigEntryNotReady(
-            f"ha-sip add-on is unavailable or the Supervisor API cannot be reached: {err}"
+            "ha-sip add-on is unavailable or the Supervisor API cannot be reached: "
+            f"{err}"
         ) from err
 
     config = _merge_entry_config(entry)
-    entry.runtime_data = UniFiTalkRuntimeData(config=config)
+    store = Store[dict[str, Any]](
+        hass, STORAGE_VERSION, _runtime_storage_key(entry.entry_id)
+    )
+    entry.runtime_data = UniFiTalkRuntimeData(
+        config=config,
+        store=store,
+        device_id=async_ensure_device(hass, entry),
+    )
+    _restore_runtime(entry.runtime_data, await store.async_load())
 
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
 
@@ -671,10 +757,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: UniFiTalkConfigEntry) ->
             return web.Response(status=400, text="Expected JSON payload")
 
         dispatch_payload = _update_runtime_from_webhook(entry.runtime_data, payload)
+        _schedule_runtime_save(entry.runtime_data)
         async_dispatcher_send(
             hass, f"{SIGNAL_CALL_STATE}_{entry.entry_id}", dispatch_payload
         )
-        hass.bus.async_fire(EVENT_WEBHOOK, payload)
+        hass.bus.async_fire(
+            EVENT_WEBHOOK,
+            {
+                **payload,
+                **dispatch_payload,
+                "entry_id": entry.entry_id,
+                "device_id": entry.runtime_data.device_id,
+            },
+        )
         return web.Response(status=200)
 
     try:
@@ -698,6 +793,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: UniFiTalkConfigEntry) -
     if not unload_ok:
         return False
 
+    await entry.runtime_data.store.async_save(_serialize_runtime(entry.runtime_data))
+
     webhook_id = entry.runtime_data.config.get(CONF_WEBHOOK_ID)
     if webhook_id:
         try:
@@ -716,7 +813,11 @@ def get_notify_defaults(entry: ConfigEntry) -> dict[str, Any]:
     config = _merge_entry_config(entry)
     return {
         "target": config.get(CONF_DEFAULT_TARGET, ""),
-        "ring_timeout": config.get(CONF_NOTIFY_RING_TIMEOUT, DEFAULT_NOTIFY_RING_TIMEOUT),
-        "sip_account": config.get(CONF_NOTIFY_SIP_ACCOUNT, DEFAULT_NOTIFY_SIP_ACCOUNT),
+        "ring_timeout": config.get(
+            CONF_NOTIFY_RING_TIMEOUT, DEFAULT_NOTIFY_RING_TIMEOUT
+        ),
+        "sip_account": config.get(
+            CONF_NOTIFY_SIP_ACCOUNT, DEFAULT_NOTIFY_SIP_ACCOUNT
+        ),
         "hangup_after_message": config.get(CONF_NOTIFY_HANGUP, True),
     }

@@ -19,10 +19,6 @@
           "tts_voice": "TTS voice",
           "tts_debug_print": "Enable TTS debug logging",
           "webhook_id": "Webhook ID (leave blank to auto-generate)",
-          "default_target": "Default notification target",
-          "notify_ring_timeout": "Default notification ring timeout",
-          "notify_sip_account": "Default notification SIP account",
-          "notify_hangup_after_message": "Hang up after notification message",
           "cache_dir": "Audio cache directory",
           "name_server": "Name server",
           "global_options": "Global ha-sip options",
@@ -51,10 +47,6 @@
           "tts_voice": "TTS voice",
           "tts_debug_print": "Enable TTS debug logging",
           "webhook_id": "Webhook ID (leave blank to auto-generate)",
-          "default_target": "Default notification target",
-          "notify_ring_timeout": "Default notification ring timeout",
-          "notify_sip_account": "Default notification SIP account",
-          "notify_hangup_after_message": "Hang up after notification message",
           "cache_dir": "Audio cache directory",
           "name_server": "Name server",
           "global_options": "Global ha-sip options",
@@ -82,44 +74,15 @@
   "options": {
     "step": {
       "init": {
-        "title": "Update UniFi Talk settings",
-        "description": "Update the stored UniFi Talk and ha-sip settings.",
+        "title": "Default notification target",
+        "description": "Configure the default destination and call behavior used by the UniFi Talk notify entity.",
         "data": {
-          "sip_host": "SIP host (UniFi Console/Talk host IP)",
-          "sip_port": "SIP port",
-          "username": "Extension set in UniFi Talk",
-          "password": "SIP password",
-          "realm": "SIP realm",
-          "answer_mode": "Answer mode",
-          "settle_time": "Settle time after answer (seconds)",
-          "incoming_call_file": "Incoming call file (required when answer mode is accept)",
-          "tts_engine_id": "TTS engine entity ID",
-          "tts_language": "TTS language",
-          "tts_voice": "TTS voice",
-          "tts_debug_print": "Enable TTS debug logging",
-          "webhook_id": "Webhook ID (leave blank to auto-generate)",
           "default_target": "Default notification target",
           "notify_ring_timeout": "Default notification ring timeout",
           "notify_sip_account": "Default notification SIP account",
-          "notify_hangup_after_message": "Hang up after notification message",
-          "cache_dir": "Audio cache directory",
-          "name_server": "Name server",
-          "global_options": "Global ha-sip options",
-          "sip_options": "SIP options",
-          "enable_ssh": "Fetch SIP password over SSH",
-          "ssh_host": "SSH host",
-          "ssh_port": "SSH port",
-          "ssh_user": "SSH user",
-          "ssh_password": "SSH password"
+          "notify_hangup_after_message": "Hang up after notification message"
         }
       }
-    },
-    "error": {
-      "addon_missing": "The ha-sip add-on is not installed or the Supervisor API is unavailable.",
-      "addon_options_failed": "Updating ha-sip failed. Check the add-on logs for details.",
-      "incoming_file_required": "An incoming call file is required when answer mode is set to accept.",
-      "ssh_credentials_missing": "Provide the UniFi SSH password or enter the SIP password directly.",
-      "ssh_password_fetch_failed": "Unable to fetch the SIP password over SSH from the UniFi host."
     }
   }
 }

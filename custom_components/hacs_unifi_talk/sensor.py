@@ -1,24 +1,14 @@
 from __future__ import annotations
 
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.core import callback, HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import UniFiTalkConfigEntry
-from .const import DOMAIN, SIGNAL_CALL_STATE
-
-
-def _device_info(entry: ConfigEntry) -> DeviceInfo:
-    return DeviceInfo(
-        identifiers={(DOMAIN, entry.entry_id)},
-        manufacturer="Ubiquiti",
-        model="UniFi Talk via ha-sip",
-        name="UniFi Talk",
-    )
+from .const import SIGNAL_CALL_STATE
+from .entity import device_info
 
 
 async def async_setup_entry(
@@ -26,6 +16,7 @@ async def async_setup_entry(
     entry: UniFiTalkConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
+    del hass
     async_add_entities(
         [
             UniFiTalkLastEventSensor(entry),
@@ -43,7 +34,7 @@ class UniFiTalkBaseSensor(SensorEntity):
     def __init__(self, entry: UniFiTalkConfigEntry, suffix: str) -> None:
         self.entry = entry
         self._attr_unique_id = f"{entry.entry_id}_{suffix}"
-        self._attr_device_info = _device_info(entry)
+        self._attr_device_info = device_info(entry)
         self._unsub_dispatcher = None
 
     async def async_added_to_hass(self) -> None:
